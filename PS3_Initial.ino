@@ -1,236 +1,295 @@
-/**
-Code By: Luke Krasner and David Groden
-Email: luke.krasner@gmail.com
-Website: https://lukerasner.com
-Github https://github.com/lkrasner
-This is experimental code at this point and may cause unexpected results.
-It is recomended that you exaamine and test the code before assuming it will work.
-I take no responsibilty for any damage this may cause to hardware due to malfunctions.
-**/
-
 #include <Boards.h>
 #include <Firmata.h>
-#include <Servo.h> //Has stuff neccesary for servo use
-#include <PS3BT.h> //Has the PS3 Controller stuff
+#include <Servo.h> //has stuff neccesary for servo use
+#include <PS3BT.h> //has the PS3 Controller stuff
 
-USB Usb; //Sets up the usb host stuff
+USB Usb; //sets up the usb host stuff
 BTD Btd(&Usb);
 PS3BT PS3(&Btd); // Creates the PS3 control instance
 
-Servo baseRotate; // Creates the servo objects
+Servo baseRotate; //the servo objects
 Servo baseLift;
 Servo elbow;
 Servo wrist;
 Servo wristRotate;
 Servo grip;
 
-const int deadZoneHigh = 145;  //deadzones for the Controller
-const int deadZoneLow = 105;
-boolean powerOn = false;  //Is the power on?
-int powerPin=13;  //Pin To be used for toggling the power to the servos
-double baseRotatePos=90; //Positions the servos should move to.
+const int deadZoneHigh = 30; //deadzones for the sticks
+const int deadZoneLow = -30;
+int powerPin=3; //pin to be used for the power togle
+double baseRotatePos=90; //posistions for the servos
 double baseLiftPos=90;
 double elbowPos=90;
 double wristPos=90;
 double wristRotatePos=90;
 double gripPos=90;
-int leftX; //Controller stick positions mapped from -128 to 128
+int leftX;  //positions of sticks and triggers. -127 to 127
 int leftY;
 int rightX;
 int rightY;
-int leftTrigger; //controller triggers (L2 and R2) mapped 0-255
+int leftTrigger;
 int rightTrigger;
-double baseRotateSpeed;  //Servo speeds.  0 to 6 degrees at a time
+double baseRotateSpeed;
 double baseLiftSpeed;
 double elbowSpeed;
 double wristSpeed;
 double wristRotateSpeed;
-const int servoDelay = 6;  //How long to delay after writing to the servos.  This also is a factor in the speed.
+const int waitTime = 50;
 
 
-void setup()  //Sets up servos, PS3 service, and starts serial communication proccess
+void setup()  //sets up servos and starts serial communication proccess
 {
-  baseRotate.attach(41, 500, 2700);  //Attaches Servos to pins and sets the range of pulse times properly for each servo.
+  baseRotate.attach(41, 500, 2700);  //"attaches" servos to correct output pins
   baseLift.attach(39, 900, 2100);
   elbow.attach(43, 900, 2100);
   wrist.attach(45, 600, 2500);
   wristRotate.attach(47, 600, 2500);
   grip.attach(49, 500, 2400);
+  baseRotate.write(90); //sets the servos to 90 to begin with
+  baseLift.write(90);
+  elbow.write(90);
+  wrist.write(90);
+  wristRotate.write(90);
+  grip.write(90);
 
-  pinMode(powerPin, OUTPUT); //Sets the power control pin as an output
-  digitalWrite(powerPin, LOW);  //Turns the power off to begin with  
-  Serial.begin(9600);  //Starts serial service for debugging purposes
+  pinMode(powerPin, OUTPUT); //sets the power control pin as an output
+  digitalWrite(powerPin, LOW); //turns the power off
+  Serial.begin(9600);  //starts serial service for debugging purposes
 
-  if (Usb.Init() == -1) { //I think this is important
+  if (Usb.Init() == -1) { //does some usb set up thing
     Serial.print(F("\r\nOSC did not start"));
     while(1); //halt
   }
   Serial.print(F("\r\nPS3 Bluetooth Library Started"));
 }
 
-boolean psClicked() //Is the PS button clicked
+void loop() //calls all the other functions in the proper order
 {
-  if(PS3.getButtonClick(PS)) return true;
-  else return false;
+
+  Usb.Task(); //no idea what it is, doesn't work without it.  
+
+  if(PS3.PS3Connected)
+  {
+    mapAnalog();
+    setSpeeds();
+    getPowerAndGrip();
+//    getPositions();
+    writeServos();
+    delay(waitTime);  //waits for a given time to keep the speeds in check
+  }
+
 }
 
-boolean l1Clicked() //L1
+//all these booleans are just whether something has been clicked or pressed
+boolean l1Clicked()
 {
-  if(PS3.getButtonClick(L1)) return true;
-  else return false;
+  if(PS3.getButtonClick(L1))
+  {
+    return true;
+  }
+  else
+  {
+    return false;
+  }
 }
 
-boolean r1Clicked() //R1
+boolean r1Clicked()
 {
-  if(PS3.getButtonClick(R1)) return true;
-  else return false;
+  if(PS3.getButtonClick(R1))
+  {
+    return true;
+  }
+  else
+  {
+    return false;
+  }
 }
 
-int getAnalogLeftX() //Theses are all for analog values of the sticks and triggers.  also handles dead zones
+boolean psClicked()
+{
+  if(PS3.getButtonClick(PS))
+  {
+    return true;
+  }
+  else
+  {
+    return false;
+  }
+}
+
+//Raw analog values for the sticks and triggers.
+int analogLeftX()
 {
   int localAnalog = PS3.getAnalogHat(LeftHatX);
-  if((localAnalog<deadZoneLow)||(deadZoneHigh<localAnalog)) return (localAnalog);
-  else return 128;
+
+  return (localAnalog);
+
 }
 
-int getAnalogLeftY()
+int analogLeftY()
 {
   int localAnalog = PS3.getAnalogHat(LeftHatY);
-  if((localAnalog<deadZoneLow)||(deadZoneHigh<localAnalog)) return (localAnalog);
-  else return 128;
+
+  return (localAnalog);
+
 }
 
-int getAnalogRightX()
+int analogRightX()
 {
   int localAnalog = PS3.getAnalogHat(RightHatX);
-  if((localAnalog<deadZoneLow)||(deadZoneHigh<localAnalog)) return (localAnalog);
-  else return 128;
+
+  return (localAnalog);
+
 }
 
-int getAnalogRightY()
+int analogRightY()
 {
   int localAnalog = PS3.getAnalogHat(RightHatY);
-  if((localAnalog<deadZoneLow)||(deadZoneHigh<localAnalog)) return (localAnalog);
-  else return 128;
+
+  return (localAnalog);
+
+
 }
 
-int getAnalogButtonLeft()
+int analogButtonLeft()
 {
   int localAnalog = PS3.getAnalogButton(L2_ANALOG);
-  return (localAnalog);
+  return (-localAnalog);
 }
 
-int getAnalogButtonRight()
+int analogButtonRight()
 {
   int localAnalog = PS3.getAnalogButton(R2_ANALOG);
   return (localAnalog);
 }
 
-void mapAnalog() //called to map the sticks and buttons with negatives
+void mapAnalog() //maps the raw values to a range of -127 to 127 allowing for easy direction control
 {
-  leftX = map(getAnalogLeftX(),0,255,-128,128);
-  leftY = map(getAnalogLeftY(),0,255,-128,128);
-  rightX = map(getAnalogRightX(),0,255,-128,128);
-  rightY = map(getAnalogRightY(),0,255,-128,128);
-  leftTrigger = map(getAnalogButtonLeft(),0,255,0,128);
-  rightTrigger = map(getAnalogButtonRight(),0,255,0,128);
+  leftX = map(analogLeftX(),0,255,-127,127);
+  leftY = map(analogLeftY(),0,255,-127,127);
+  rightX = map(analogRightX(),0,255,-127,127);
+  rightY = map(analogRightY(),0,255,-127,127);
+  leftTrigger = map(analogButtonLeft(),-255,0,-127,0);
+  rightTrigger = map(analogButtonRight(),0,255,0,127);
 }
 
-double calculateSpeed(int currentAnalog, int pos) //function to calculate the speed with a power function for better control and speed
+double calculateSpeed(int currentAnalog, int pos) //calculates the speed using an exponential curve
 {
-  double a; //doubles allow decimal values for more acuracy when you only have 0-6 degrees.
-  if(currentAnalog > 0 && pos < 180)
-    a = (pow(0.0156*currentAnalog,2.59095));
-  else if(currentAnalog < 0  && pos > 0)
-    a = 0 - (pow(abs(0.0156*currentAnalog),2.59095));
+  double a;
+  if((currentAnalog >= 0) && (pos < 180))
+  {
+    a = ((pow((currentAnalog/60.0),2.38)));
+  }
+  else if((currentAnalog < 0)  && (pos > 0))
+  {
+    a = 0 - ((pow((abs(currentAnalog)/60.0),2.38)));
+  }
   return a;
 }
-void setSpeeds() //sets the speeds, using the above function
+
+void setSpeeds() //sets the speeds and deals with dead zones
 {
-  if(leftX != 0) baseRotateSpeed = calculateSpeed(leftX, baseRotatePos);
-  else baseRotateSpeed = 0;  
-
-  if(leftY != 0) baseLiftSpeed = calculateSpeed(leftY, baseLiftPos);
-  else baseLiftSpeed = 0;
-
-  if(rightX != 0) wristRotateSpeed = calculateSpeed(rightX, wristRotatePos);
-  else wristRotateSpeed = 0;
-
-  if(rightY != 0) elbowSpeed = calculateSpeed(rightY, elbowPos);
-  else elbowSpeed = 0;
-
-  if(leftTrigger != 0) wristSpeed = calculateSpeed(leftTrigger, wristSpeed);
-  else wristSpeed = 0;
-
-  if(rightTrigger != 0) wristSpeed = (0 - calculateSpeed(rightTrigger, wristSpeed));
-  else wristSpeed = 0;
-  
-
-}
-
-void getPowerAndGrip()  //deals with the buttons for the power and gripper
-{
-  boolean togglePower = psClicked();
-  if(togglePower == true) digitalWrite(powerPin, !digitalRead(powerPin));  //Little trick to allow toggling the power easily.  Will ALWAYS switch the state of the pin, not just on or off.
-  boolean openGripper = l1Clicked();
-  boolean closeGripper = r1Clicked();
-  if(openGripper == true) gripPos = 80; //the positions the gripper should be in for open/ closed
-  else if(closeGripper == true) gripPos = 180;
-}
-
-void writeServos()  //Sets the position and writes the servos
-{
-  baseRotatePos+= baseRotateSpeed;
-  baseRotate.write(baseRotatePos);
-  delay(servoDelay);
-  Serial.println(baseRotatePos);
-
-  baseLiftPos+= baseLiftSpeed;
-  baseLift.write(baseLiftPos);
-  delay(servoDelay);
-
-  elbowPos+= elbowSpeed;
-  elbow.write(elbowPos);
-  delay(servoDelay);
-
-  wristPos+= wristSpeed;
-  wrist.write(wristPos);
-  delay(servoDelay);
-
-  wristRotatePos+= wristRotateSpeed;
-  wristRotate.write(wristRotatePos);
-  delay(servoDelay);
-
-  grip.write(gripPos);
-  delay(servoDelay);
-}
-
-void sendData() //left in for debugging purposes, just throw some stuf in to be printed out
-{
-  Serial.println();
-}
-void loop()  //only calls other stuff
-{
-
-  Usb.Task(); //Needed to handle USB stuff each time around
-
-  if(PS3.PS3Connected)  //only go on if the controller is connected
+  if((leftX>deadZoneHigh)||(deadZoneLow>leftX)) 
   {
-    mapAnalog();
-    setSpeeds();
-    getPowerAndGrip();
-    writeServos();
-    //sendData();
+    baseRotateSpeed = calculateSpeed(leftX, baseRotatePos);
+  }
+  else
+  {
+    baseRotateSpeed = 0;
+  }
+
+  if((leftY>deadZoneHigh)||(deadZoneLow>leftY)) 
+  {
+    baseLiftSpeed = calculateSpeed(leftY, baseLiftPos);
+  }
+  else  
+  {
+    baseLiftSpeed = 0;
+  }
+
+  if((rightX>deadZoneHigh)||(deadZoneLow>rightX)){
+    wristRotateSpeed = calculateSpeed(rightX, wristRotatePos);
+  }
+  else 
+  {
+    wristRotateSpeed = 0;
+  }
+  if((rightY>deadZoneHigh)||(deadZoneLow>rightY)) {
+    elbowSpeed = calculateSpeed(rightY, elbowPos);
+  }
+  else 
+  {
+    elbowSpeed = 0;
+  }
+
+  if((leftTrigger>deadZoneHigh)||(deadZoneLow>leftTrigger)) 
+  {
+    leftTrigger =-leftTrigger;
+    wristSpeed = calculateSpeed(leftTrigger, wristSpeed);
+    wristSpeed = (wristSpeed);
+  }
+
+  if((rightTrigger>deadZoneHigh)||(deadZoneLow>rightTrigger)) 
+  {
+    wristSpeed = 0-calculateSpeed(rightTrigger, wristSpeed);
+  }
+  if((rightTrigger<deadZoneHigh)&&(deadZoneLow<rightTrigger)&&((leftTrigger<deadZoneHigh)&&(deadZoneLow<leftTrigger)))
+  {
+    wristSpeed = 0;
   }
 
 }
 
+void getPowerAndGrip()  //gets stuff for power and gripper
+{
+  boolean togglePower = psClicked();
+  if(togglePower == true) 
+  {
+    digitalWrite(powerPin, !digitalRead(powerPin));
+  }
 
+  boolean openGripper = l1Clicked();
+  boolean closeGripper = r1Clicked();
+  if(openGripper == true) 
+  {
+    gripPos = 80;
+  }
+  else if(closeGripper == true)
+  { 
+    gripPos = 180;
+  }
+}
 
+void setPositions()  //updates positions as long as the updated value would not put them outside of thier range (0-180)
+{
+  if(((baseRotatePos+ baseRotateSpeed)<180)&&((baseRotatePos+ baseRotateSpeed)>0))
+  {
+    baseRotatePos+= baseRotateSpeed;
+  }
+  if(((baseLiftPos+ baseLiftSpeed)<180)&&((baseLiftPos+ baseLiftSpeed)>0))
+  {
+    baseLiftPos+= baseLiftSpeed;
+  }
+  if(((elbowPos+ elbowSpeed)<180)&&((elbowPos+ elbowSpeed)>0))
+  {
+    elbowPos+= elbowSpeed;
+  }
+  if(((wristPos+ wristSpeed)<180)&&((wristPos+ wristSpeed)>0))
+  {
+    wristPos+= wristSpeed;
+  }
+  if(((wristRotatePos+ wristRotateSpeed)<180)&&((wristRotatePos+ wristRotateSpeed)>0))
+  {
+    wristRotatePos+= wristRotateSpeed;
+  }
+}
 
-
-
-
-
-
-
+void writeServos()  //writes the servos to the new positions
+{
+  baseRotate.write(baseRotatePos);
+  baseLift.write(baseLiftPos);
+  elbow.write(elbowPos);
+  wrist.write(wristPos);
+  wristRotate.write(wristRotatePos);
+  grip.write(gripPos);
+}
